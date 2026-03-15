@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>chud portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#111;--topbar:#161616;--card:#1e1e1e;--card-hover:#252525;--border:#2a2a2a;--text:#fff;--text-sub:#777;--radius:10px;}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-size:14px;}
+#topbar{position:fixed;top:0;left:0;right:0;height:52px;background:var(--topbar);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 20px;gap:12px;z-index:100;}
+#brand{display:flex;align-items:center;gap:10px;text-decoration:none;flex-shrink:0;}
+#brand-icon{width:34px;height:34px;background:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;}
+#brand-icon svg{width:18px;height:18px;color:#111;}
+#brand-name{font-size:15px;font-weight:600;color:#fff;white-space:nowrap;}
+#search-wrap{margin-left:auto;position:relative;width:280px;}
+#search-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--text-sub);width:14px;height:14px;pointer-events:none;}
+#search{width:100%;height:36px;background:#2a2a2a;border:1px solid transparent;border-radius:8px;color:#fff;font-family:'Inter',sans-serif;font-size:13px;padding:0 12px 0 34px;outline:none;transition:border-color .15s,background .15s;}
+#search::placeholder{color:var(--text-sub)}
+#search:focus{border-color:#444;background:#333;}
+#main{padding:68px 20px 48px;}
+#grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;}
+.card{background:var(--card);border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:background .12s,transform .12s;position:relative;}
+.card:hover{background:var(--card-hover);transform:translateY(-2px);}
+.card-thumb{width:100%;aspect-ratio:16/9;background:#1a1a1a;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;}
+.card-thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity .25s;}
+.card-thumb img.loaded{opacity:1;}
+.card-thumb .ini{font-size:26px;font-weight:700;color:#333;text-transform:uppercase;user-select:none;letter-spacing:.02em;transition:opacity .25s;z-index:1;position:relative;}
+.card-thumb img.loaded ~ .ini{opacity:0;}
+.card-label{padding:8px 10px 10px;font-size:12px;font-weight:500;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+/* screenshot badge */
+.snap-badge{
+  position:absolute;top:5px;right:5px;
+  background:rgba(0,0,0,0.7);
+  border-radius:4px;padding:2px 5px;
+  font-size:9px;color:#4caf50;
+  opacity:0;transition:opacity .2s;
+  pointer-events:none;z-index:10;
+  font-family:'Inter',sans-serif;
+}
+.card:hover .snap-badge{opacity:1;}
+.snap-badge.has-snap{color:#4caf50;}
+.snap-badge.no-snap{color:#666;}
+#empty{display:none;padding:80px 20px;color:var(--text-sub);font-size:13px;text-align:center;}
+/* toast */
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:#1e1e1e;border:1px solid #333;color:#fff;font-size:12px;padding:8px 16px;border-radius:8px;opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;z-index:999;font-family:'Inter',sans-serif;}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:3px}
+</style>
+</head>
+<body>
+<div id="topbar">
+  <a id="brand" href="#">
+    <div id="brand-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="7" width="20" height="12" rx="5"/>
+        <path d="M7 13h4M9 11v4"/>
+        <circle cx="15.5" cy="13" r=".9" fill="currentColor" stroke="none"/>
+        <circle cx="17.5" cy="11.5" r=".9" fill="currentColor" stroke="none"/>
+      </svg>
+    </div>
+    <span id="brand-name">Chud Portal</span>
+  </a>
+  <div id="search-wrap">
+    <svg id="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+      <circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/>
+    </svg>
+    <input id="search" type="text" placeholder="Search games..." autocomplete="off" spellcheck="false">
+  </div>
+</div>
+<div id="main"><div id="grid"></div><div id="empty">No games found</div></div>
+<div id="toast"></div>
+
+<script>
+const CDN='https://cdn.jsdelivr.net/gh/bubbls/ugs-singlefile/UGS-Files/';
+const SNAP_PREFIX='chud_snap_';
+
+// ── Static image map ──────────────────────────────────────────────────────────
+const IMGS={
+  '2048':'https://upload.wikimedia.org/wikipedia/commons/1/18/2048_logo.png',
+  'adarkroom':'https://upload.wikimedia.org/wikipedia/commons/thumb/2/27/A_Dark_Room_icon.png/240px-A_Dark_Room_icon.png',
+  'advancewars':'https://upload.wikimedia.org/wikipedia/en/f/f1/AdvanceWars.jpg',
+  'advancewars2':'https://upload.wikimedia.org/wikipedia/en/e/e3/AdvanceWars2.jpg',
+  'alienhominid':'https://upload.wikimedia.org/wikipedia/en/0/0b/Alien_Hominid_Coverart.png',
+  'angrybirds':'https://upload.wikimedia.org/wikipedia/en/2/20/Angry-birds-trilogy-cover.png',
+  'angrybirdsspace':'https://upload.wikimedia.org/wikipedia/en/9/96/Angry_Birds_Space_Logo.png',
+  'animalcrossingwildworld':'https://upload.wikimedia.org/wikipedia/en/9/9a/Animal_Crossing_Wild_World_Coverart.png',
+  'asteroids':'https://upload.wikimedia.org/wikipedia/en/a/a7/Asteroi1.png',
+  'baldisbasics':'https://upload.wikimedia.org/wikipedia/en/4/4e/Baldi%27s_Basics_title_screen.png',
+  'banjokazooie':'https://upload.wikimedia.org/wikipedia/en/3/31/Banjo-Kazooie_Cover.png',
+  'banjotooie':'https://upload.wikimedia.org/wikipedia/en/8/8c/Banjo-TooieCoverart.png',
+  'basketballlegends':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/basketball-legends.jpg',
+  'basketballstars':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/basketball-stars.jpg',
+  'battlezone':'https://upload.wikimedia.org/wikipedia/en/2/26/Battlezone_arcade_flyer.png',
+  'bigtowertinysquare':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/big-tower-tiny-square.jpg',
+  'bitlife':'https://upload.wikimedia.org/wikipedia/en/b/b1/BitLife_icon.jpg',
+  'blackjack':'https://upload.wikimedia.org/wikipedia/commons/thumb/5/55/Blackjack_game_example.png/320px-Blackjack_game_example.png',
+  'bleachvsnaruto':'https://upload.wikimedia.org/wikipedia/en/9/9b/Bleach_vs_Naruto.jpg',
+  'bloons':'https://upload.wikimedia.org/wikipedia/en/b/b0/Bloons_tower_defense.jpg',
+  'btd5':'https://upload.wikimedia.org/wikipedia/en/0/0b/BTD5_steam_icon.jpg',
+  'bloonsTD5':'https://upload.wikimedia.org/wikipedia/en/0/0b/BTD5_steam_icon.jpg',
+  'bloxorz':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/bloxorz.jpg',
+  'bobtherobber':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/bob-the-robber.jpg',
+  'bobtherobber2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/bob-the-robber-2.jpg',
+  'bomberman':'https://upload.wikimedia.org/wikipedia/en/8/87/Super_Bomberman_cover.jpg',
+  'superbomberman':'https://upload.wikimedia.org/wikipedia/en/8/87/Super_Bomberman_cover.jpg',
+  'bouncemasters':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/bouncemasters.jpg',
+  'bridgerace':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/bridge-race.jpg',
+  'bubbletanks':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/bubble-tanks.jpg',
+  'buildnowgg':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/buildnow-gg.jpg',
+  'burritobison':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/burrito-bison.jpg',
+  'burritobisonrevenge':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/burrito-bison-revenge.jpg',
+  'cactusmccoy':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/cactus-mccoy.jpg',
+  'cactusmccoy2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/cactus-mccoy-2.jpg',
+  'castlevania':'https://upload.wikimedia.org/wikipedia/en/e/e3/Castlevania_NES_cover_art.jpg',
+  'castlevania2':'https://upload.wikimedia.org/wikipedia/en/d/d1/Simon%27s_Quest_box_art.jpg',
+  'castlevania3':'https://upload.wikimedia.org/wikipedia/en/1/14/Castlevania_III_Dracula%27s_Curse_NES_cover.png',
+  'castlevaniaariaofsorrow':'https://upload.wikimedia.org/wikipedia/en/4/4e/Castlevania_AoS_Cover.jpg',
+  'catmario':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/cat-mario.jpg',
+  'cavestory':'https://upload.wikimedia.org/wikipedia/en/3/3c/Cave_Story_title_screen.png',
+  'celeste':'https://upload.wikimedia.org/wikipedia/commons/0/0f/Celeste_box_art_full.png',
+  'chaosfaction2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/chaos-faction-2.jpg',
+  'checkers':'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b6/Draughts.jpg/320px-Draughts.jpg',
+  'chess':'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6f/ChessSet.jpg/320px-ChessSet.jpg',
+  'chronotrigger':'https://upload.wikimedia.org/wikipedia/en/a/a7/Chrono_Trigger.png',
+  'clusterrush':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/cluster-rush.jpg',
+  'cod4':'https://upload.wikimedia.org/wikipedia/en/5/52/Call_of_Duty_4_Modern_Warfare.jpg',
+  'contra':'https://upload.wikimedia.org/wikipedia/en/5/5b/Contra_NES.jpg',
+  'contra3':'https://upload.wikimedia.org/wikipedia/en/1/18/Contra_III_-_The_Alien_Wars_Coverart.png',
+  'cookieclicker':'https://upload.wikimedia.org/wikipedia/en/6/6c/Cookie_Clicker_icon.png',
+  'cookingmama':'https://upload.wikimedia.org/wikipedia/en/c/cd/Cooking_Mama_cover.jpg',
+  'crossyroad':'https://upload.wikimedia.org/wikipedia/en/2/26/Crossy_Road_App_Icon.png',
+  'cuttherope':'https://upload.wikimedia.org/wikipedia/en/d/da/Cut_the_Rope_-_Logo.png',
+  'daggerfall':'https://upload.wikimedia.org/wikipedia/en/0/09/DaggerfallBox.jpg',
+  'deadplate':'https://upload.wikimedia.org/wikipedia/en/e/e5/Dead_Plate_cover.png',
+  'decision':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/decision.jpg',
+  'decision2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/decision-2.jpg',
+  'decision3':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/decision-3.jpg',
+  'deltarune':'https://upload.wikimedia.org/wikipedia/en/3/35/Deltarune_logo.png',
+  'diablo':'https://upload.wikimedia.org/wikipedia/en/7/7a/Diablo_I_cover.png',
+  'diddykongracing':'https://upload.wikimedia.org/wikipedia/en/e/e0/Diddy_Kong_Racing_Cover.jpg',
+  'digdug':'https://upload.wikimedia.org/wikipedia/en/7/7c/Dig_Dug_Arcade.png',
+  'dogeminer':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/doge-miner.jpg',
+  'dogeminer2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/doge-miner-2.jpg',
+  'dokidokiliteratureclub':'https://upload.wikimedia.org/wikipedia/en/4/4e/Doki_Doki_Literature_Club_cover_art.png',
+  'donkeykong':'https://upload.wikimedia.org/wikipedia/en/5/59/Donkey_Kong_Arcade_1981.png',
+  'donkeykong64':'https://upload.wikimedia.org/wikipedia/en/0/01/Donkey_Kong_64_Cover.jpg',
+  'donkeykongcountry':'https://upload.wikimedia.org/wikipedia/en/1/16/Donkey_Kong_Country_SNES_cover.png',
+  'donkeykongcountry2':'https://upload.wikimedia.org/wikipedia/en/a/ac/Donkey_Kong_Country_2_SNES_cover.png',
+  'donkeykongcountry3':'https://upload.wikimedia.org/wikipedia/en/8/81/Donkey_Kong_Country_3.jpg',
+  'doodlejump':'https://upload.wikimedia.org/wikipedia/en/3/3f/Doodle_Jump_app_icon.png',
+  'doom':'https://upload.wikimedia.org/wikipedia/en/5/57/Doom_cover_art.jpg',
+  'doom2':'https://upload.wikimedia.org/wikipedia/en/7/77/Doom_II_cover_art.jpg',
+  'doom64':'https://upload.wikimedia.org/wikipedia/en/7/7c/Doom_64_box_art.jpg',
+  'driftboss':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/drift-boss.jpg',
+  'drmario':'https://upload.wikimedia.org/wikipedia/en/a/a4/Dr._Mario_NES_cover_art.jpg',
+  'ducklife':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/duck-life.jpg',
+  'ducklife2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/duck-life-2.jpg',
+  'ducklife3':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/duck-life-3.jpg',
+  'ducklife4':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/duck-life-4.jpg',
+  'ducklifespace':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/duck-life-space.jpg',
+  'ducktales':'https://upload.wikimedia.org/wikipedia/en/1/18/DuckTales_NES.jpg',
+  'dukenukem3d':'https://upload.wikimedia.org/wikipedia/en/8/87/Duke_Nukem_3D_cover.jpg',
+  'earthbound':'https://upload.wikimedia.org/wikipedia/en/8/80/EarthBound_Box.jpg',
+  'earthwormjim':'https://upload.wikimedia.org/wikipedia/en/0/04/Earthworm_jim.jpg',
+  'electricman2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/electric-man-2.jpg',
+  'endlesswar4':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/endless-war-4.jpg',
+  'endlesswar5':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/endless-war-5.jpg',
+  'epicbattlefantasy5':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/epic-battle-fantasy-5.jpg',
+  'escaperoad':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/escape-road.jpg',
+  'fallout':'https://upload.wikimedia.org/wikipedia/en/3/35/Fallout_cover_art.jpg',
+  'fancypantsadventure':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/fancy-pants-adventure.jpg',
+  'fancypantsadventure2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/fancy-pants-adventure-world-2.jpg',
+  'fancypantsadventure3':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/fancy-pants-adventure-3.jpg',
+  'feedus':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/feed-us.jpg',
+  'finalfantasy':'https://upload.wikimedia.org/wikipedia/en/9/99/FinalFantasyNESCoverArt.jpg',
+  'finalfantasyvi':'https://upload.wikimedia.org/wikipedia/en/0/05/Final_Fantasy_VI.jpg',
+  'finalfantasyvii':'https://upload.wikimedia.org/wikipedia/en/c/ce/Final_Fantasy_VII_Box_Art.jpg',
+  'finalfantasytactics':'https://upload.wikimedia.org/wikipedia/en/e/e0/Final_Fantasy_Tactics_cover.jpg',
+  'finalninja':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/final-ninja.jpg',
+  'fireboyandwatergirl':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/fireboy-and-watergirl-in-the-forest-temple.jpg',
+  'fireboyandwatergirl2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/fireboy-and-watergirl-2.jpg',
+  'fireboyandwatergirl3':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/fireboy-and-watergirl-3.jpg',
+  'fireboyandwatergirl5':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/fireboy-and-watergirl-5.jpg',
+  'fireboyandwatergirl6':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/fireboy-and-watergirl-6.jpg',
+  'fireemblem':'https://upload.wikimedia.org/wikipedia/en/2/2a/FireEmblem_NA.jpg',
+  'fnaf':'https://upload.wikimedia.org/wikipedia/en/f/f1/Five_Nights_at_Freddy%27s_cover_art.jpg',
+  'fnaf2':'https://upload.wikimedia.org/wikipedia/en/6/6e/Five_Nights_at_Freddy%27s_2_cover_art.jpg',
+  'fnaf3':'https://upload.wikimedia.org/wikipedia/en/d/d0/Five_Nights_at_Freddy%27s_3_cover_art.jpg',
+  'fnaf4':'https://upload.wikimedia.org/wikipedia/en/3/34/Five_Nights_at_Freddy%27s_4_box_art.jpg',
+  'fridaynightfunkin':'https://upload.wikimedia.org/wikipedia/en/4/4b/Friday_Night_Funkin%27_game_icon.png',
+  'freerider':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/free-rider.jpg',
+  'freerider2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/free-rider-2.jpg',
+  'fruitninja':'https://upload.wikimedia.org/wikipedia/en/6/6d/Fruit_Ninja_icon.png',
+  'fzero':'https://upload.wikimedia.org/wikipedia/en/e/ee/F-Zero_SNES_cover.jpg',
+  'fzerox':'https://upload.wikimedia.org/wikipedia/en/f/f5/F-Zero_X_box_art.jpg',
+  'galaga':'https://upload.wikimedia.org/wikipedia/en/2/2e/Galaga.png',
+  'gangstabean':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/gangsta-bean.jpg',
+  'gangstabean2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/gangsta-bean-2.jpg',
+  'geometrydash':'https://upload.wikimedia.org/wikipedia/en/a/a7/Geometry_Dash_Logo.png',
+  'getawayshootout':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/getaway-shootout.jpg',
+  'getontop':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/get-on-top.jpg',
+  'ghosttrick':'https://upload.wikimedia.org/wikipedia/en/8/82/Ghost_Trick_Phantom_Detective_cover.jpg',
+  'goingballs':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/going-balls.jpg',
+  'goldeneye007':'https://upload.wikimedia.org/wikipedia/en/e/eb/GoldenEye_007_N64_Cover.jpg',
+  'goldensun':'https://upload.wikimedia.org/wikipedia/en/7/73/GoldenSun.jpg',
+  'goldminer':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/gold-miner.jpg',
+  'granny':'https://upload.wikimedia.org/wikipedia/en/e/e8/Granny_%28game%29_icon.jpg',
+  'granturismo':'https://upload.wikimedia.org/wikipedia/en/c/cb/GT1-cover.jpg',
+  'granturismo2':'https://upload.wikimedia.org/wikipedia/en/f/f3/Gran_Turismo_2.jpg',
+  'gta':'https://upload.wikimedia.org/wikipedia/en/6/60/Grand_Theft_Auto_cover.png',
+  'gta2':'https://upload.wikimedia.org/wikipedia/en/8/81/GTA2_cover_art.png',
+  'grandtheftautoadvance':'https://upload.wikimedia.org/wikipedia/en/a/a3/Grand_Theft_Auto_Advance_coverart.png',
+  'gunblood':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/gunblood.jpg',
+  'gunmayhem':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/gun-mayhem.jpg',
+  'gunmayhem2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/gun-mayhem-2.jpg',
+  'halflife':'https://upload.wikimedia.org/wikipedia/en/0/06/Half-Life_Cover_Art.jpg',
+  'halocombatdevolved':'https://upload.wikimedia.org/wikipedia/en/8/80/Halo_-_Combat_Evolved_%28XBox_version%29.jpg',
+  'happywheels':'https://upload.wikimedia.org/wikipedia/en/3/3b/Happy_Wheels_logo.jpg',
+  'harvestmoon':'https://upload.wikimedia.org/wikipedia/en/3/3e/HM64Cover.jpg',
+  'helixjump':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/helix-jump.jpg',
+  'hillclimbracing':'https://upload.wikimedia.org/wikipedia/en/8/87/Hill_Climb_Racing_icon.png',
+  'hobo':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/hobo.jpg',
+  'hobo2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/hobo-2-wanted.jpg',
+  'holeio':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/hole-io.jpg',
+  'hollowknight':'https://upload.wikimedia.org/wikipedia/en/9/9a/Hollow_Knight_art.png',
+  'houseofhazards':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/house-of-hazards.jpg',
+  'idlebreakout':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/idle-breakout.jpg',
+  'impossiblequiz':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/the-impossible-quiz.jpg',
+  'infinitecraft':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/infinite-craft.jpg',
+  'jacksmith':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/jacksmith.jpg',
+  'jetpackjoyride':'https://upload.wikimedia.org/wikipedia/en/3/35/Jetpack_Joyride_Logo.jpg',
+  'johnnytrigger':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/johnny-trigger.jpg',
+  'johnnyupgrade':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/johnny-upgrade.jpg',
+  'justfalllol':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/just-fall-lol.jpg',
+  'killerinstinct':'https://upload.wikimedia.org/wikipedia/en/8/87/Killer_Instinct_arcade.jpg',
+  'kingdomheartsdays':'https://upload.wikimedia.org/wikipedia/en/5/5a/Kingdom_Hearts_358-2_Days_Box_Art.jpg',
+  'kirby64':'https://upload.wikimedia.org/wikipedia/en/0/0e/Kirby_64_-_The_Crystal_Shards_Coverart.png',
+  'kirbysadventure':'https://upload.wikimedia.org/wikipedia/en/6/6b/Kirbys_adventure.jpg',
+  'kirbysdreamland':'https://upload.wikimedia.org/wikipedia/en/5/5b/Kirbys-Dream-Land-Box.jpg',
+  'kirbysuperstar':'https://upload.wikimedia.org/wikipedia/en/4/40/Kirby_Super_Star_SNES_Game_Cover.jpg',
+  'kirbysuperstarultra':'https://upload.wikimedia.org/wikipedia/en/2/25/KirbySuperStarUltraCoverArtUS.jpg',
+  'kittencannon':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/kitten-cannon.jpg',
+  'knifehit':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/knife-hit.jpg',
+  'laststand':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/the-last-stand.jpg',
+  'learntofly':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/learn-to-fly.jpg',
+  'learntofly2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/learn-to-fly-2.jpg',
+  'learntofly3':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/learn-to-fly-3.jpg',
+  'legobatman':'https://upload.wikimedia.org/wikipedia/en/4/4a/Legobatman.jpg',
+  'legoindianajones':'https://upload.wikimedia.org/wikipedia/en/9/9b/Lego_Indiana_Jones_The_Original_Adventures.jpg',
+  'lemmings':'https://upload.wikimedia.org/wikipedia/en/1/10/Lemmings_Coverart.png',
+  'leveldevil':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/level-devil.jpg',
+  'linktothepast':'https://upload.wikimedia.org/wikipedia/en/e/e7/A_link_to_the_past_snes_cover.jpg',
+  'madalinstuntcars':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/madalin-stunt-cars-2.jpg',
+  'madnessaccelerant':'https://upload.wikimedia.org/wikipedia/en/6/65/Madness_Combat.jpg',
+  'madnessinteractive':'https://upload.wikimedia.org/wikipedia/en/6/65/Madness_Combat.jpg',
+  'majorasmask':'https://upload.wikimedia.org/wikipedia/en/6/60/The_Legend_of_Zelda_-_Majora%27s_Mask_Box_Art.jpg',
+  'mariokart64':'https://upload.wikimedia.org/wikipedia/en/0/0b/Mario_Kart_64box.jpg',
+  'mariokartds':'https://upload.wikimedia.org/wikipedia/en/7/71/Mario_Kart_DS_box.jpg',
+  'marioparty':'https://upload.wikimedia.org/wikipedia/en/0/09/Mario_Party_cover.png',
+  'marioparty2':'https://upload.wikimedia.org/wikipedia/en/3/36/Mario_Party_2_Cover.jpg',
+  'marioparty3':'https://upload.wikimedia.org/wikipedia/en/b/be/Mario_Party_3_-_North_American_box_art.jpg',
+  'meatboy':'https://upload.wikimedia.org/wikipedia/en/a/a1/Super_Meat_Boy_cover.jpg',
+  'medalofhonor':'https://upload.wikimedia.org/wikipedia/en/b/b2/Medal_of_Honor_%282010_video_game%29.jpg',
+  'megaman':'https://upload.wikimedia.org/wikipedia/en/1/18/Mega_Man_1_box_artwork.png',
+  'megaman2':'https://upload.wikimedia.org/wikipedia/en/a/a5/Mega_Man_2_Box_Art.PNG',
+  'megamanx':'https://upload.wikimedia.org/wikipedia/en/8/82/Megamanx.jpg',
+  'megamanx2':'https://upload.wikimedia.org/wikipedia/en/8/8b/Mega_Man_X2_box_art.jpg',
+  'megamanzero':'https://upload.wikimedia.org/wikipedia/en/5/59/Mega_Man_Zero_box_art.jpg',
+  'metalgear':'https://upload.wikimedia.org/wikipedia/en/7/7b/MetalGearNESboxart.jpg',
+  'metalgearsolid':'https://upload.wikimedia.org/wikipedia/en/f/f8/Metal_Gear_Solid_cover_art.png',
+  'metalslugadvance':'https://upload.wikimedia.org/wikipedia/en/0/0a/Metal_Slug_Advance_Coverart.png',
+  'metroid':'https://upload.wikimedia.org/wikipedia/en/3/3a/Metroid_boxart.jpg',
+  'metroidfusion':'https://upload.wikimedia.org/wikipedia/en/4/4f/Metroid_Fusion_box_art.jpg',
+  'metroidzeromission':'https://upload.wikimedia.org/wikipedia/en/b/b1/Metroid_Zero_Mission_cover_art.jpg',
+  'minecraft':'https://upload.wikimedia.org/wikipedia/en/5/51/Minecraft_cover.png',
+  'minceraft':'https://upload.wikimedia.org/wikipedia/en/5/51/Minecraft_cover.png',
+  'eaglercraft':'https://upload.wikimedia.org/wikipedia/en/5/51/Minecraft_cover.png',
+  'monkeymart':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/monkey-mart.jpg',
+  'mortalkombat':'https://upload.wikimedia.org/wikipedia/en/a/ab/MK1arcadeflyer.png',
+  'mortalkombat2':'https://upload.wikimedia.org/wikipedia/en/5/5d/Mortalkombat2-arcadeflyer.png',
+  'mortalkombat3':'https://upload.wikimedia.org/wikipedia/en/5/58/Mortal_Kombat_3.jpg',
+  'mortalkombat4':'https://upload.wikimedia.org/wikipedia/en/3/39/Mortal_Kombat_4.jpg',
+  'motherload':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/motherload.jpg',
+  'motox3m':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/moto-x3m.jpg',
+  'motox3m2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/moto-x3m-2.jpg',
+  'motox3m3':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/moto-x3m-3.jpg',
+  'motox3mpoolparty':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/moto-x3m-pool-party.jpg',
+  'motox3mspookyland':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/moto-x3m-spooky-land.jpg',
+  'motox3mwinter':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/moto-x3m-winter.jpg',
+  'myfriendpedro':'https://upload.wikimedia.org/wikipedia/en/9/93/My_Friend_Pedro_cover_art.jpg',
+  'nbajam':'https://upload.wikimedia.org/wikipedia/en/4/4f/NBA_Jam_cover.jpg',
+  'nfsmostwanted':'https://upload.wikimedia.org/wikipedia/en/3/37/Need_for_Speed_Most_Wanted_%282005%29.jpg',
+  'nfsunderground':'https://upload.wikimedia.org/wikipedia/en/c/c2/NFSUndergroundCoverArt.jpg',
+  'nfsunderground2':'https://upload.wikimedia.org/wikipedia/en/6/64/Need_for_Speed_Underground_2_Coverart.png',
+  'nitromemustdie':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/nitrome-must-die.jpg',
+  'ocarinaoftime':'https://upload.wikimedia.org/wikipedia/en/5/57/The_Legend_of_Zelda_Ocarina_of_Time.jpg',
+  'onlyup':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/only-up.jpg',
+  'oregontrail':'https://upload.wikimedia.org/wikipedia/en/7/7a/Oregon_Trail_2_cover.jpg',
+  'ovo':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/ovo.jpg',
+  'pacman':'https://upload.wikimedia.org/wikipedia/en/5/59/Pac-man.png',
+  'papabakeria':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/papas-bakeria.jpg',
+  'papascheeseria':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/papas-cheeseria.jpg',
+  'papascupcakeria':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/papas-cupcakeria.jpg',
+  'papasfreezeria':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/papas-freezeria.jpg',
+  'papashotdoggeria':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/papas-hot-doggeria.jpg',
+  'papaspancakeria':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/papas-pancakeria.jpg',
+  'papaspastaria':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/papas-pastaria.jpg',
+  'papasscooperia':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/papas-scooperia.jpg',
+  'papassushiria':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/papas-sushiria.jpg',
+  'papastacomia':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/papas-tacomia.jpg',
+  'papermario':'https://upload.wikimedia.org/wikipedia/en/a/a4/Paper_Mario_cover.png',
+  'papermariottyd':'https://upload.wikimedia.org/wikipedia/en/6/64/PaperMarioTTYD.jpg',
+  'parappatherapper':'https://upload.wikimedia.org/wikipedia/en/e/e9/PaRappaTheRapper.jpg',
+  'peggle':'https://upload.wikimedia.org/wikipedia/en/3/32/Peggle_logo.png',
+  'perfectdark':'https://upload.wikimedia.org/wikipedia/en/9/9d/Perfect_Dark_N64.jpg',
+  'persona':'https://upload.wikimedia.org/wikipedia/en/c/cb/Persona1_cover.jpg',
+  'persona2':'https://upload.wikimedia.org/wikipedia/en/e/e7/Persona2InnocentSin_PSP_cover.jpg',
+  'pizzatower':'https://upload.wikimedia.org/wikipedia/en/9/96/Pizza_Tower_cover.jpg',
+  'plantsvszombies':'https://upload.wikimedia.org/wikipedia/en/1/11/PlantsVsZombies_AlbumArt.jpg',
+  'pvz':'https://upload.wikimedia.org/wikipedia/en/1/11/PlantsVsZombies_AlbumArt.jpg',
+  'pvz2':'https://upload.wikimedia.org/wikipedia/en/7/73/Plants_vs._Zombies_2_Logo.png',
+  'pokemonemerald':'https://upload.wikimedia.org/wikipedia/en/5/53/Emerald_cover_art.png',
+  'pokemonfirered':'https://upload.wikimedia.org/wikipedia/en/8/8e/Pokemon_FireRed_box_art.png',
+  'pokemonleafgreen':'https://upload.wikimedia.org/wikipedia/en/8/81/Pokemon_LeafGreen_box_art.png',
+  'pokemonruby':'https://upload.wikimedia.org/wikipedia/en/c/c7/Pokemon_ruby.png',
+  'pokemonsapphire':'https://upload.wikimedia.org/wikipedia/en/5/5b/Pokemon_sapphire_cover.png',
+  'pokemongold':'https://upload.wikimedia.org/wikipedia/en/0/04/Pokemon_Gold_box_art.jpg',
+  'pokemonsilver':'https://upload.wikimedia.org/wikipedia/en/a/a1/Pokemon_silver_English_boxart.png',
+  'pokemoncrystal':'https://upload.wikimedia.org/wikipedia/en/f/f0/Pokemon_Crystal_Box_Art.jpg',
+  'pokemondiamond':'https://upload.wikimedia.org/wikipedia/en/a/a5/Pokemon_diamond.png',
+  'pokemonplatinum':'https://upload.wikimedia.org/wikipedia/en/3/3e/Pokemon_Platinum_Version.jpg',
+  'pokemonheartgold':'https://upload.wikimedia.org/wikipedia/en/6/60/HeartGold_EN_boxart.jpg',
+  'pokemonsoulsilver':'https://upload.wikimedia.org/wikipedia/en/f/f2/SoulSilver_EN_boxart.jpg',
+  'pokemonblack':'https://upload.wikimedia.org/wikipedia/en/e/e7/Pokemon_Black_English_boxart.jpg',
+  'pokemonwhite':'https://upload.wikimedia.org/wikipedia/en/f/f1/Pokemon_White_English_boxart.jpg',
+  'pokemonmysterydungeon':'https://upload.wikimedia.org/wikipedia/en/5/5e/Pokemon_Mystery_Dungeon_Red_Rescue_Team_Coverart.png',
+  'pokemonstadium':'https://upload.wikimedia.org/wikipedia/en/e/ef/Pok%C3%A9mon_Stadium_2_cover_art.jpg',
+  'pokemonsnap':'https://upload.wikimedia.org/wikipedia/en/e/e3/Pokemon_Snap_cover.jpg',
+  'pokered':'https://upload.wikimedia.org/wikipedia/en/a/af/Pokemon_red_EN_boxart.jpg',
+  'pokeyellow':'https://upload.wikimedia.org/wikipedia/en/b/b6/Pokemon_Yellow.png',
+  'portal':'https://upload.wikimedia.org/wikipedia/en/0/03/Portal_game_cover.jpg',
+  'punchout':'https://upload.wikimedia.org/wikipedia/en/8/82/Punch_Out_NES.jpg',
+  'puyopuyofever':'https://upload.wikimedia.org/wikipedia/en/5/58/Puyo_Puyo_Fever_cover_art.jpg',
+  'qbert':'https://upload.wikimedia.org/wikipedia/en/1/12/Qbert.png',
+  'quake2':'https://upload.wikimedia.org/wikipedia/en/7/72/Quake_II_cover.jpg',
+  'quake3':'https://upload.wikimedia.org/wikipedia/en/c/c3/Quake_III_Arena_Box_Art.jpg',
+  'qwop':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/qwop.jpg',
+  'raftwars':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/raft-wars.jpg',
+  'raftwars2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/raft-wars-2.jpg',
+  'ragdollarchers':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/ragdoll-archers.jpg',
+  'ragdollhit':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/ragdoll-hit.jpg',
+  'raze':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/raze.jpg',
+  'raze2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/raze-2.jpg',
+  'raze3':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/raze-3.jpg',
+  'redball':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/red-ball.jpg',
+  'redball4':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/red-ball-4.jpg',
+  'residentevil':'https://upload.wikimedia.org/wikipedia/en/7/7e/Resident_Evil_-_GameCube_NA_Cover.jpg',
+  'residentevil2':'https://upload.wikimedia.org/wikipedia/en/0/01/Resident_Evil_2_cover_art.jpg',
+  'retrobowl':'https://upload.wikimedia.org/wikipedia/en/0/0d/Retro_Bowl_icon.png',
+  'returnman':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/return-man.jpg',
+  'riddleschool':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/riddle-school.jpg',
+  'roadofthedead':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/road-of-the-dead.jpg',
+  'rocketleague':'https://upload.wikimedia.org/wikipedia/en/a/a5/Rocket_League_cover.jpg',
+  'roguesoul':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/rogue-soul.jpg',
+  'rollingsky':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/rolling-sky.jpg',
+  'rooftopsnipers':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/rooftop-snipers.jpg',
+  'rooftopsnipers2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/rooftop-snipers-2.jpg',
+  'run':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/run.jpg',
+  'run2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/run-2.jpg',
+  'run3':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/run-3.jpg',
+  'sandboxels':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/sandboxels.jpg',
+  'secretofmana':'https://upload.wikimedia.org/wikipedia/en/4/4c/SecretOfMana.jpg',
+  'shift':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/shift.jpg',
+  'shortlife':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/short-life.jpg',
+  'silenthill':'https://upload.wikimedia.org/wikipedia/en/3/31/Silent_Hill_video_game_cover.png',
+  'slitherio':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/slither-io.jpg',
+  'slope':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/slope.jpg',
+  'smashkarts':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/smash-karts.jpg',
+  'snowrider':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/snow-rider-3d.jpg',
+  'snailbob':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/snail-bob.jpg',
+  'solarsmash':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/solar-smash.jpg',
+  'solitaire':'https://upload.wikimedia.org/wikipedia/en/f/f0/Klondike_Solitaire.png',
+  'sonicthehedgehog':'https://upload.wikimedia.org/wikipedia/en/c/cd/Sonic_the_Hedgehog_1_Genesis_box_art.jpg',
+  'sonicthehedgehog2':'https://upload.wikimedia.org/wikipedia/en/a/a3/Sonic_the_Hedgehog_2.jpg',
+  'sonicthehedgehog3':'https://upload.wikimedia.org/wikipedia/en/5/5b/Sonic_the_Hedgehog_3_cover.jpg',
+  'sonicandknuckles':'https://upload.wikimedia.org/wikipedia/en/3/36/Sonic%26Knuckles_box.jpg',
+  'soniccd':'https://upload.wikimedia.org/wikipedia/en/5/5a/SonicCDbig.jpg',
+  'sonicadvance':'https://upload.wikimedia.org/wikipedia/en/d/da/Sonic_Advance_Coverart.png',
+  'sonicadvance2':'https://upload.wikimedia.org/wikipedia/en/e/e6/Sonic_Advance_2_Coverart.png',
+  'sonicadvance3':'https://upload.wikimedia.org/wikipedia/en/d/d3/Sonic_Advance_3_Coverart.png',
+  'soniccolors':'https://upload.wikimedia.org/wikipedia/en/2/27/Sonic_Colors_Box_Art.jpg',
+  'sonicrush':'https://upload.wikimedia.org/wikipedia/en/3/35/SonicRushCover.jpg',
+  'spaceinvaders':'https://upload.wikimedia.org/wikipedia/en/0/0a/Space_Invaders_flyer%2C_1978.jpg',
+  'sprunki':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/sprunki.jpg',
+  'stateio':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/state-io.jpg',
+  'stickmanhook':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/stickman-hook.jpg',
+  'stickminescapingprison':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/escaping-the-prison.jpg',
+  'stickminfleecomplex':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/fleeing-the-complex.jpg',
+  'stickrpgcomplete':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/stick-rpg-complete.jpg',
+  'stickwar':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/stick-war.jpg',
+  'stickwar2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/stick-war-2-order-empire.jpg',
+  'strikeforceheroes':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/strike-force-heroes.jpg',
+  'strikeforceheroes2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/strike-force-heroes-2.jpg',
+  'strikeforceheroes3':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/strike-force-heroes-3.jpg',
+  'streetfighter2':'https://upload.wikimedia.org/wikipedia/en/0/01/SF2_Arcade_Flyer.jpg',
+  'streetofrage':'https://upload.wikimedia.org/wikipedia/en/a/a7/Streets_of_Rage.jpg',
+  'streetofrage2':'https://upload.wikimedia.org/wikipedia/en/4/44/Streets_of_Rage_2_cover.jpg',
+  'subwaysurfers':'https://upload.wikimedia.org/wikipedia/en/3/32/Subway_Surfers_promotional_image.png',
+  'suika':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/suika-game.jpg',
+  'superhot':'https://upload.wikimedia.org/wikipedia/en/8/87/Superhot_cover.jpg',
+  'supermariobros':'https://upload.wikimedia.org/wikipedia/en/0/03/Super_Mario_Bros._box.png',
+  'supermariobros2':'https://upload.wikimedia.org/wikipedia/en/e/e5/Super_Mario_Bros._2_box.png',
+  'supermariobros3':'https://upload.wikimedia.org/wikipedia/en/a/a5/Super_Mario_Bros._3_box.png',
+  'supermariokart':'https://upload.wikimedia.org/wikipedia/en/b/b7/SuperMarioKart.jpg',
+  'supermario64':'https://upload.wikimedia.org/wikipedia/en/6/6a/Super_Mario_64_box_cover.jpg',
+  'supermariorpg':'https://upload.wikimedia.org/wikipedia/en/5/5d/SuperMarioRPG.jpg',
+  'supermarioworld':'https://upload.wikimedia.org/wikipedia/en/3/32/Super_Mario_World_Coverart.png',
+  'supermetroid':'https://upload.wikimedia.org/wikipedia/en/e/e4/Smetroidbox.jpg',
+  'supersmashbros':'https://upload.wikimedia.org/wikipedia/en/7/76/Super_Smash_Bros._box_art.jpg',
+  'supersmashflash2':'https://upload.wikimedia.org/wikipedia/en/4/4b/Super_Smash_Flash_2_logo.png',
+  'swordsandsandals':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/swords-and-sandals.jpg',
+  'templeofboom':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/temple-of-boom.jpg',
+  'templerun2':'https://upload.wikimedia.org/wikipedia/en/9/9b/Temple_Run_2_logo.png',
+  'territorialio':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/territorial-io.jpg',
+  'tetris':'https://upload.wikimedia.org/wikipedia/en/4/4a/Tetris_NES_cover_art.jpg',
+  'theclassroom':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/the-classroom.jpg',
+  'theimpossiblegame':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/the-impossible-game.jpg',
+  'thisistheonlylevel':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/this-is-the-only-level.jpg',
+  'timeshooter2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/time-shooter-2.jpg',
+  'timeshooter3':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/time-shooter-3.jpg',
+  'tinyfishing':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/tiny-fishing.jpg',
+  'tmnt':'https://upload.wikimedia.org/wikipedia/en/a/a5/TMNT_arcade.jpg',
+  'tonyhawkskater2':'https://upload.wikimedia.org/wikipedia/en/3/31/Tony_Hawk%27s_Pro_Skater_2.jpg',
+  'tonyhawksunderground':'https://upload.wikimedia.org/wikipedia/en/4/43/THUG_cover_art.jpg',
+  'tosstheturtle':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/toss-the-turtle.jpg',
+  'trollfacequest':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/troll-face-quest-1.jpg',
+  'tunnelrush':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/tunnel-rush.jpg',
+  'turokdinosaurhunter':'https://upload.wikimedia.org/wikipedia/en/4/42/Turok_Dinosaur_Hunter.jpg',
+  'twistedmetal':'https://upload.wikimedia.org/wikipedia/en/8/83/Twisted_Metal_1995.jpg',
+  'ultrakill':'https://upload.wikimedia.org/wikipedia/en/3/35/Ultrakill_cover.jpg',
+  'undertale':'https://upload.wikimedia.org/wikipedia/commons/a/a7/Undertale_cover.png',
+  'unfairmario':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/unfair-mario.jpg',
+  'upgradecomplete':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/upgrade-complete.jpg',
+  'vampiresurvivors':'https://upload.wikimedia.org/wikipedia/en/7/73/Vampire_Survivors_cover_art.jpg',
+  'vex':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/vex.jpg',
+  'vex2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/vex-2.jpg',
+  'vex3':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/vex-3.jpg',
+  'vex4':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/vex-4.jpg',
+  'vex5':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/vex-5.jpg',
+  'vex6':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/vex-6.jpg',
+  'vex7':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/vex-7.jpg',
+  'warfare1944':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/warfare-1944.jpg',
+  'warioland4':'https://upload.wikimedia.org/wikipedia/en/0/09/Wario_Land_4_box_art.jpg',
+  'wariowareinc':'https://upload.wikimedia.org/wikipedia/en/3/3e/WarioWare_Inc._Mega_Microgame_%24_cover.jpg',
+  'webfishing':'https://upload.wikimedia.org/wikipedia/en/8/8e/WEBFISHING_cover.jpg',
+  'wheely':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/wheely.jpg',
+  'wipeout2097':'https://upload.wikimedia.org/wikipedia/en/a/a7/Wipeout_2097_cover.jpg',
+  'wolfenstein3d':'https://upload.wikimedia.org/wikipedia/en/a/ae/Wolf3dbox.jpg',
+  'worldshardestgame':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/the-worlds-hardest-game.jpg',
+  'wrassling':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/wrassling.jpg',
+  'yanderesimulator':'https://upload.wikimedia.org/wikipedia/en/f/f4/Yandere_Simulator_logo.png',
+  'zelda2thelegendoflink':'https://upload.wikimedia.org/wikipedia/en/4/4e/Zelda_II_The_Adventure_of_Link_NES.jpg',
+  'zeldaminishcap':'https://upload.wikimedia.org/wikipedia/en/4/4c/Zelda_minishcap.jpg',
+  'zombiesatemyneighboors':'https://upload.wikimedia.org/wikipedia/en/0/07/Zombies_Ate_My_Neighbors.jpg',
+  'zombotron':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/zombotron.jpg',
+  'zombotron2':'https://img.poki-cdn.com/cdn-cgi/image/quality=78,width=314,height=314,fit=cover,f=auto/zombotron-2.jpg',
+  'zuma':'https://upload.wikimedia.org/wikipedia/en/2/24/Zuma_Deluxe.jpg',
+};
+
+// ── Snapshot storage ──────────────────────────────────────────────────────────
+function snapKey(file){ return SNAP_PREFIX + file.toLowerCase(); }
+function getSnap(file){ try{ return localStorage.getItem(snapKey(file)); }catch(e){ return null; } }
+function saveSnap(file, dataUrl){ try{ localStorage.setItem(snapKey(file), dataUrl); }catch(e){} }
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+let toastTimer;
+function toast(msg){
+  const el=document.getElementById('toast');
+  el.textContent=msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>el.classList.remove('show'),2500);
+}
+
+// ── Listen for screenshots from game windows ──────────────────────────────────
+window.addEventListener('message', e => {
+  if(e.data && e.data.type==='chud_snap'){
+    const {file, dataUrl} = e.data;
+    saveSnap(file, dataUrl);
+    // update any visible card
+    const card = document.querySelector(`.card[data-file="${CSS.escape(file)}"]`);
+    if(card){
+      const thumb = card.querySelector('.card-thumb');
+      let img = thumb.querySelector('img');
+      if(!img){
+        img = document.createElement('img');
+        img.alt = file;
+        thumb.insertBefore(img, thumb.firstChild);
+      }
+      img.src = dataUrl;
+      img.onload = ()=>{ img.classList.add('loaded'); };
+      const badge = card.querySelector('.snap-badge');
+      if(badge){ badge.textContent='📸 captured'; badge.className='snap-badge has-snap'; }
+    }
+    toast('📸 Thumbnail saved for ' + displayName(file));
+  }
+});
+
+// ── Screenshot injection script ───────────────────────────────────────────────
+// This gets injected into every game's HTML before it's written to the new window
+function makeSnapScript(fileKey, parentOrigin){
+  return `<script>
+(function(){
+  var _sent = false;
+  var _origin = ${JSON.stringify(parentOrigin)};
+  var _file = ${JSON.stringify(fileKey)};
+  function trySnap(){
+    if(_sent) return;
+    // Find the largest canvas, or fall back to body screenshot via html2canvas
+    var canvases = document.querySelectorAll('canvas');
+    var best = null, bestArea = 0;
+    canvases.forEach(function(c){
+      var a = c.width * c.height;
+      if(a > bestArea){ bestArea = a; best = c; }
+    });
+    if(best && bestArea > 10000){
+      try{
+        var dataUrl = best.toDataURL('image/jpeg', 0.7);
+        if(dataUrl && dataUrl.length > 1000){
+          _sent = true;
+          window.opener && window.opener.postMessage({type:'chud_snap',file:_file,dataUrl:dataUrl}, _origin);
+          return;
+        }
+      }catch(e){}
+    }
+    // fallback: html2canvas
+    if(window.html2canvas){
+      html2canvas(document.body,{scale:0.4,useCORS:true,allowTaint:true,logging:false}).then(function(c){
+        if(_sent) return;
+        _sent = true;
+        var dataUrl = c.toDataURL('image/jpeg',0.6);
+        window.opener && window.opener.postMessage({type:'chud_snap',file:_file,dataUrl:dataUrl}, _origin);
+      }).catch(function(){});
+    }
+  }
+  // Try at 3s and 6s after load
+  window.addEventListener('load', function(){
+    setTimeout(trySnap, 3000);
+    setTimeout(trySnap, 6000);
+  });
+  // Also try on first user interaction (game might not render until click)
+  document.addEventListener('click', function(){ setTimeout(trySnap, 2000); }, {once:true});
+})();
+<\/script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"><\/script>`;
+}
+
+// ── Game launcher ─────────────────────────────────────────────────────────────
+function launchGame(file){
+  const norm = file.endsWith('.html') ? file : file + '.html';
+  const origin = location.origin || (location.protocol+'//'+location.host);
+  fetch(`${CDN}${encodeURIComponent(norm)}?t=${Date.now()}`)
+    .then(r => r.text())
+    .then(html => {
+      // Inject snap script just before </body> or at end
+      const snapScript = makeSnapScript(file, origin);
+      const injected = html.includes('</body>')
+        ? html.replace('</body>', snapScript + '</body>')
+        : html + snapScript;
+      const w = window.open('about:blank','_blank');
+      if(w){ w.document.open(); w.document.write(injected); w.document.close(); }
+    })
+    .catch(()=> window.open(`${CDN}${encodeURIComponent(norm)}`,'_blank'));
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const RAW=['cl1','cl10bullets','cl10minutestildawn','cl12minibattles','cl1on1soccer','cl1v1lol','cl1v1tennis','cl2048','cl2048cupcakes','cl2doom','cl2Dshooting','cl3dash','cl3pandas','cl3pandasbrazil','cl3pandasfantasy','cl3pandasjapan','cl3pandasnight','cl3slices2','cl40xescape','cl4thandgoal','cl500calibercontractz','cl60secondsburgerrun','cl60secondssantarun','cl8ballclassic','cl8ballpool','cl9007199254740992','cl99balls','cl99nightsitf','clabandoned3','clabsolutemadness','clacecombat2','clacecombat3','clacegangstertaxi','clachievementunlocked','clachievmentunlocked','clachievmentunlocked2','clachievmentunlocked3','clachillies','clachillies2','clADarkRoom','cladayintheoffice','clADOFAI','cladvancewars','cladvancewars2','cladventneon','clAdventureCapatalist','cladventurecapitalist','clagariolite','clageofwar','clageofwar2','clagesofconflict','clahoysurvival','clai','clakoopasrevenge','clakoopasrevenge2','clakumanorgaiden','clalienhominid','clalienhominidgba','clalienskyinvasion','clalientransporter','clalienvspredator','clallbossesin1','clallocation','clamaze','clamidstthesky','clamigopancho','clamigopancho2','clamigopancho3','clamigopancho4','clamigopancho5','clamigopancho6','clamigopancho7','clamongus','clamorphous','clancientsins','clangry-birdsspace','clangrybirds','clangrybirdsshowdown','clangrybirdsspace','clanimalcrossingwildworld','clanotherworld','clapotris','clappleshooter','clappleworm','claquaparkio','clarceuslegend','clarcheryworldtour','clarena','clarmormayhem2','clarsonate','clascent','clasmallworldcup','clasteroids','clasteroidsALT','clattackhole','clavalanche','claviamasters','claviamastersbuggy','clAwesomePirates','clawesomeplanes','clawesometanks','clawesometanks2','clB3313','clbabeltower','clbabychiccoadventure','clbabykaizo','clbabysniperinvietnam','clbackrooms','clbackrooms2D','clbackyardbaseball','clbackyardbaseball09','clbackyardbaseball10','clbackyardsoccer','clbaconmaydie','clbadbodyguards','clbadicecream','clbadmondaysimulator','clbadparenting','clbadpiggies','clbadtimesim','clbadtimesimulator','clbaldidecomp','clbaldisbasics','clbaldisbasicsremaster','clbaldisfunnewschoolultimate','clballblast','clballsandbricks','clballsandbricksgood','clbananasimulator','clbanditgunslingers','clbanjokazooie','clbanjotooie','clbankbreakout2','clbankrobbery2','clbarryhasasecret','clbas','clbaseballbros','clbasketballfrvr','clbasketballlegends','clbasketballstars','clbasketbattle','clbasketbros','clbasketrandom','clbasketrandomgood','clbasketslamdunk2','clbatterup','clbattlekarts','clbattles','clbattlesim','clbattlezone','clbazookaboy','clbballlegend','clbeachboxingsim','clbeamrider','clbearbarians','clbearsus','clben10alienforce','clben10omniverse','clben10protector','clben10racing','clben10ultimatealien','clbergentruck201x','clbfdia5b','clbigicetowertinysquare','clbigneontowertinysquare','clbigshotboxing2','clbigtowertinysquare','clbigtowertinysquare2','clbigtowertinysquare2good','clBig_Time_Butter_Baron','clbindingofisaccsheeptime','clbioevil4','clbitlife','clbitlifeencrypted','clbitplanes','clblackjack','clblackjackbattle','clblackjackhhhh','clblacksmithlab','clblastronaut','clblazedrifter','clbleachvsnaruto','clblightborne','clblobsstory2','clblockblast','clblockcraftparkour','clblockcraftshooter','clblockpost','clblockthepig','clblockydemolitionderby','clblockysnakes','clbloodmoney','clbloodtournament','clbloons','clbloons2','clbloonspp1','clbloonspp2','clbloonspp3','clbloonspp4','clbloonspp5','clbloonspp6','clbloonsTD1','clbloonsTD2','clbloonsTD3','clbloonsTD4','clbloonsTD5','clbloonsTD6scratch','clbloxorz','clblumgiracers','clBMX2','clbntts','clbobtherobber','clbobtherobber2','clbobtherobber5','clbollybeat','clbomberman','clbomberman2','clbombermanhero','clboomslingers','clbottlecracks','clbottleflip3d','clbounceback','clbouncemasters','clbouncymotors','clBountyOfOne','clbowlalt','clboxhead2playrooms','clboxheadnightmare','clboxinglive-2','clboxinglive2','clboxingrandom','clbrainrot','clbridgerace','clBTD1','clbtd5','clbtts','clbtts2','clbubbleshooter','clbubbleshooterpirate','clbubbletanks','clbubbletanks2','clbubbletanks3','clbubbletanksarenas','clbubbletankstd','clbubsy','clbuckshotroulette','clbuildnowgg','clbunnyland','clburgerandfrights','clburritobison','clburritobison2','clburritobisonlaunchalibre','clburritobisonrevenge','clbushidoblade','clcactusmccoy','clcactusmccoy2','clcannonballs3d','clcannonfodder','clcapybaraclicker','clcarcrash3','clcardrawing','clcareatscar2deluxe','clcarkingarena','clcarmods','clcarstuntsdriving','clCartoonNetworkTableTennisUltimateTournament','clcastlebloodline','clcastlecircleofmoon','clcastlevania','clcastlevania2','clcastlevania3','clcastlevaniaariaofsorrow','clcastlevaniadawnofsorrow','clcastlevanianes','clcastlewarsmodern','clcatmario','clcatmariogood','clcatslovecake2','clcavestory','clceleste','clceleste2','clcellardoor','clchaosfaction2','clcheckers','clcheesechompers3d','clcheshireinachatroom','clchess','clchessclassic','clchibiknight','clchickenscream','clchickenwar','clchipschallenge','clchoppyorc','clchronotrigger','clchuzzle','clCircloO2','clciviballs','clciviballs2','clclashofvikings','clclassof09','clcleanupio','clclearvision','clclearvision2','clclearvision3','clclearvision4','clclearvision5','clclmadnessambulation','clclubbytheseal','clclusterrush','clcoalllcdemo','clcod4','clcodblackopp','clcoddefiance','clcodenamegordon','clcodmodernwarfare','clcodworldatwar','clcoffeemaker','clcolorburst3d','clcolormatch','clcolorwatersort3d','clcombopool','clcommanderkeen4','clcommanderkeen5','clcommanderkeen6','clconkersbadfurday','clcontra','clcontra3','clcookie-clicker','clcookieclicker','clcookieclickercool','clcookieclickergood','clcookingmama','clcookingmama2','clcookingmama3','clcoreball','clcotlk','clcountmastersstickmangames','clcoverorange','clcoverorange2','clcoverorangejourneygangsters','clcoverorangejourneyknights','clcoverorangejourneypirates','clcoverorangejourneyspace','clcoverorangeplayerspack','clcoverorangeplayerspack2','clcoverorangeplayerspack3','clcrashbandicoot','clcrashbandicoot2','clcrashteamracing','clcrazycars','clcrazycattle3d','clcrazychicken3D','clcrazyfrogracer','clcrazymotorcycle','clcreeperworld2','clcrossyroad','clcrunchball3000','clcs1.6','clcsds','clcsgoclicker','clctgpnitro','clcurveball','clcuttherope','clcuttheropetimetravel','clcyberbungracing','clcybersensation','cldadgame','cldadnme','cldaggerfall','cldanktomb','cldborigins','cldborigins2','cldbsniper','cldbzattacksaiyans','cldbzdevolution','cldbzsuperwarriorssonic','cldeadestate','cldeadlydescent','cldeadplate','cldeadzed','cldeadzed2','cldeathchase','cldeblob2','cldecision','cldecision2','cldecision3','cldecisionmedieval','cldeepersleep','cldeepestsword','cldeepsleep','cldefendyourcastle','cldefendyournuts','cldefendyournuts2','cldeltarune','cldeltatraveler','cldementium','cldemolitionderbycrashracing','cldiablo','cldiamondhollow','cldiamondhollow2','cldiddykong-racing','cldieinthedungeon','cldigdeep','cldigdug','cldigdug2','cldigdug26','cldigtochina','cldinodudes','cldiredecks','cldoblox','cldogeminer','cldogeminer2','cldokidokiliteratureclub','cldonkeykong','cldonkeykong64','cldonkeykongcountry','cldonkeykongcountry2','cldonkeykongcountry3','cldonkeykongnes','cldontescape','cldontescape2','cldontescape3','cldoodlejump','cldoodlejumpgoober','cldoom','cldoom2','cldoom2d','cldoom2dDOS','cldoom3pack','cldoom64','cldoomdos','cldoomemscripten','cldoomps','cldoompsalt','cldoomzio','cldouchebaglife','cldouchebagworkout','cldownthemountain','cldragonballadvance','clDragonBallZTheLegacyofGoku','clDragonQuestIX','cldrawclimber','cldrawtheline','cldreader','cldreadheadparkour','cldriftboss','cldrifthuntersmerge','cldrivemady','cldrivenwild','cldrmario','cldrweedgaster','cldubstep','clduckhunt','clducklife','clducklife2','clducklife3','clducklife4','clducklifebattle','clducklifespace','clducklingsio','clducktales','cldukenukem3d','cldumpling','cldungeondeck','cldungeonraid','cldungeonsanddegenerategamblers','cldunkshot','clduskchild','cldyingdreams','cldynamiteheaddy','cleagleride','clearntodie','clearntodie2','clearthbound','clearthbound3','clearthboundsnes','clearthtaken','clearthtaken2','clearthtaken3','clearthwormjim','clearthwormjim2','cledelweiss','cledyscarsimulator','cleffinghail','cleffingmachines','cleffingworms','cleffingzombies','clegg','cleggycar','clelasticface','clelectricman2','clemujs','clenchain','clendlesswar4','clendlesswar5','clendlesswar5wow','clendlesswar7','clenduro','clepicbattlefantasy5','clescalatingduel','clescaperoad-2','clescaperoad','clet','cletrianoddyssey','clevilglitch','clevolution','clexcitebike64','clextremerun3d','clfactoryballs','clfactoryballs2','clfactoryballs3','clfactoryballs4','clfairytalevsonepiece','clfallout','clfamidash','clfancypantsadventure','clfancypantsadventure2','clfancypantsadventure3','clfancysnowboarding','clfashionbattle','clfattygenius','clfearstofathomhomealone','clfeedus','clfeedus2','clfeedus3','clfeedus4','clfeedus5','clFF3','clff6','clffmysticquest','clFFsonic1','clFFsonic2','clFFsonic3','clFFsonic4','clFFsonic5','clFFsonic61','clFFsonic62','clFIFA07','clFIFA10','clFIFA11','clfifa2000','clFIFA99','clFIFAinternationalsoccer','clFIFAroadtoworldcup98','clFIFAsoccer06','clFIFAsoccer95','clFIFAsoccer96','clFIFAsoccer97','clFIFAstreet2','clfinalearth2','clfinalfantasy','clfinalfantasyII','clfinalfantasytactics','clfinalfantasyVI','clfinalfantasyVII','clfinalfantasyVIId2','clfinalfantasyVIId3','clfinalfantasyVIItheothertetrr','clfinalninja','clfireblob','clfireboyandwatergirl','clfireboyandwatergirl2','clfireboyandwatergirl3','clfireboyandwatergirl5','clfireboyandwatergirl6','clfireemblem','clfisheatgettingbig','clfisquarium','clfivenightsatbaldisredone','clfivenightsatshrekshotel','clflashsonic','clfloodrunner','clfloodrunner2','clfloodrunner4','clfluidism','clfnac1','clfnac2','clFNAF','clFNAF2','clFNAF3','clFNAF4','clfnaf4halloween','clfnafanimatronics','clfnafps','clfnafsl','clfnafucn','clfnafworldd','clfnfagoti','clfnfbfdi26','clfnfblackbetrayal','clfnfbside','clfnfcamelliarudeblaster','clfnfcrunchin','clfnfdesolation','clfnfdokitakeoverplus','clfnfdropandroll','clfnfdustin','clfnffleetway','clfnffnaf3','clfnfgamebreakerbundle','clfnfgoldenapple','clfnfhex','clfnfholiday','clfnfhorkglorpgloop','clfnfhypnoslullaby','clfnfimposterv4','clfnfindiecross','clfnfmadnesspoop','clfnfmariomadnessdside','clfnfmidfight','clfnfmiku','clfnfmobmod','clfnfneo','clfnfpiggyfield','clfnfpokepastaperdition','clfnfqt','clfnfrevmixed','clfnfrewrite','clfnfselfpaced','clfnfshaggy4keys','clfnfshaggyxmatt','clfnfshucks-v2','clfnfshucksv2','clfnfsky','clfnfsoft','clfnfsonicexe','clfnfsonicexe4','clfnftailsgetstrolled','clfnftricky','clfnfwednesday-infedility','clfnfwhitty','clfnfzardy','clfocus','clfolderdungeon','clfootballbros','clfootballlegends','clforknsausage','clfortzone','clfpa4p1','clfpa4p2','clfreerider','clfreerider2','clfreerider3','clfridaynightfunkin','clfromrusttoash','clfruitninja','clfunnybattle','clfunnybattle2','clfunnymadracing','clfunnyshooter2','clfunnyshooter22','clfzero','clfzerox','clgalaga','clgameandwatchcollection','clgangstabean','clgangstabean2','clgangsterbros','clgarcello','clgdlite','clgdsubzero','clgeneralchaos','clgenericfightermaybe','clgeometrydashscratch','clgeometryvibes','clgeorgeandtheprinter','clgetawayshootout','clgetontop','clgetyoked','clghosttrick','clgimmietheairpod','clgladdihoppers','clgloryhunters','clglover','clgoalsouthafrica','clgobble','clgoingballs','clgolddiggerfrvr','clgoldeneye007','clgoldensun','clgoldensunnds','clGoldenSunTheLostAge','clgoldminer','clgolforbit','clgolfsunday','clgoodboygalaxy','clgoodmonkeymart','clgooglebaseball','clgoogledino','clgorescriptclassic','clgrandactionsimulator-ny','clgranddad','clgrandtheftautoadvance','clgranny','clgranny2','clgranny22','clgranny3','clgranturismo','clgranturismo2','clgrassmowing','clgravity','clgravitymod','clgrimacebirthday','clgrindcraft','clgrowagarden','clgrowdenio','clgrowyourgarden','clgta','clgta2','clgta22','clgta2alt','clgtaalt','clgtaalty','clgtachina','clguesstheiranswer','clgun-spin','clgunblood','clguncho','clgunknight','clgunmayhem','clgunmayhem2','clgunmayhem2goof','clgunmayhemredux','clgunnight','clgunsmoke','clgymstack','clhacx','clhajimeippo','clhalflife','clhalocombatdevolved','clhandshakes','clhandsofwar','clhandulum','clhanger2','clhappyroom','clhappywheels','clhardwaretycoon','clHaroldsbadday','clharvestio','clharvestmoon','clharvestmoon64','clhauntthehouse','clheartandsoul','clhei$t','clhelixjump','clhellron','clhelpnobrakes','clhero3flyingrobot','clhextris','clhighstakes','clhighwayracer2','clhighwaytraffic3d','clhillclimbracinglite','clHiNoHomo','clhipsterkickball','clhobo','clhobo2','clhobo3','clhobo4','clhobo5','clhobo6','clhobo7','clhobovszombies','clholeio','clhollowknight','clhouseofhazards','clhoverracerdrive','clhumanexpenditureprogram','clhungryknight','clhungrylamu','clhyppersandbox','clidlebreakout','clidledice','clidleidlegamedev','clidleminertycoon','climpossiblequiz','climpossiblequiz2','clinclementemerald','clindiantrucksimiulator','clinfinitecraft','clinkgame','clinnkeeper','clinsidestory','clinteractivebuddy','clintoruins','clintospace','clintospace2','clintospace3','clintothedeepweb','clintrusion','cliqball','clironsnout','clironsoldier','cliwbtg','cljacksmith','cljailbreakobbbobob','cljefflings','cljellydadhero','cljellydrift','cljellytruck','cljellytruckgood','cljetforcegemini','cljetpackjoyride','cljetrush','cljetskiracing','cljohnnytrigger','cljohnnyupgrade','cljourneydownhill','cljumpingshell','cljustfalllol','cljusthitthebutton','cljustoneboss','clkaizomarioworld','clkalikan','clkapi','clkaratebros','clkarlson','clkartbros','clKenGriffeyJrPresentsMajorLeagueBaseball','clkillerinstinct','clkillover','clkilltheiceagebabyadventure','clkingdomheartsdays','clkingdomheartsrecoded','clkingdomheartsrecodedalt','clkirby64','clkirbyandtheamzingmirror','clkirbysadventure','clkirbysdreamland','clkirbysdreamland3','clkirbysqueaksquad','clkirbysuperstar','clkirbysuperstarultra','clkittencannon','clklifur','clknifehit','clknightmaretower','clkonkrio','clkoopasrevenge','clkourio','cllaceysflashgames','cllastfirered','cllasthorizon','cllaststand','cllaststand2','clleaderstrike','cllearntofly','cllearntofly2','cllearntofly3','cllearntoflyidle','cllegobatman','cllegobatman2superheroes','cllegoindianajones','cllegoindianajones2','cllegoninjago','cllegostarwars','cllemmings','clleveldevil','clleverwarriors','cllightitup','cllilrunmo','cllinerider','cllinktothepast','cllittlerunmo','cllockthedoor','clloderunner','cllonewolf','cllosangelesshark','cllowknight','clloz1','cllozlinkawakening','cllozminishcap','cllozoracleofseasons','cllozspirittracks','clluckyblocks','clmadalinstuntcars','clmadalinstuntcarsgood','clmadalinstuntcarsmultiplayerfixed','clmadden93','clmadden94','clmadden95','clmadden96','clmadden99','clmaddenfootball','clmaddenfootball64','clmaddennfl','clmaddennfl2000','clmaddennfl2001','clmaddennfl2002','clmadnessaccelerant','clmadnesscombatdefense','clmadnesscombatnexus','clmadnessgemini','clmadnesshydraulic','clmadnessinteractive','clmadnessoffcolor','clmadnesspremediation','clmadnessretaliation','clmadnesss2010','clmadnessstand','clmadskillsmotocross2','clmadstick','clmadstuntcars2','clmagictiles3','clmajorasmask','clmakesureitsclosed','clmanagod','clmario3','clmarioandluigisuperstarsaga','clmariocombat','clmariogolf','clMarioisMissingDoneRight','clmariokart64','clmariokartds','clmariokartsupercircuit','clmariomadness','clmariominusrabbids','clmariopaint','clmarioparty','clmarioparty2','clmarioparty3','clmariopartyds','clmariosmysterymeat','clmariotennis','clmaskedforcesunlimited','clmastermindworldconquerer','clmatrixrampage','clmattv2','clmcfpsfbhd','clmcraerally','clmeatboy','clmeatboyflash','clmedalofhonor','clmedievalshark','clmedievil','clmegachess','clmegaman','clmegaman2','clmegaman2gba','clmegaman3','clmegaman4','clmegaman5','clmegaman6','clmegaman7','clmegaman8','clmegamanlegends','clmegamanlegends2','clmegamanx','clmegamanx2','clmegamanx3','clmegamanx4','clmegamanzero','clmegamanzx','clmegaminer','clmelonplayground','clmeowuwu','clmergeroundracers','clmetalgear','clmetalgearsolid','clmetalgearsolidps','clmetalslugadvance','clmetalslugmission1','clmetalslugmission2','clMetalSonicHyperdrive','clmetroid','clmetroid2','clmetroidfusion','clmetroidzeromission','clmiamishark','clmicromages','clmightyknight','clmightyknight2','clmimic','clmindscape','clminecraft1-8-8','clminecraftshooter','clmineshooter','clminesweeperplus','clminhero','clminicrossword','clminimart','clminishooters','clminitooth','clmiraginewar','clmisslecommand','clmk4ampedup','clmmwilywars','clmobcontrolhtml5','clmobiusrevolution','clmoneyrush','clmonkeymart','clmonkeymartenc','clmonstertracks','clmonstertruckportstunt','clmortalkombat','clmortalkombat2','clmortalkombat3','clmortalkombatadvance','clmortkom4','clmotherload','clmotoroadrash','clmotox3m2','clmotox3m3','clmotox3mm','clmotox3mpoolparty','clmotox3mspookyland','clmotox3mwinter','clmountainbikeracer','clmrracer','clmspacman','clmultitask','clmutilate-a-doll','clmxoffroadmaster','clmyfriendpedro','clmyfriendpedroarena','clmyteardrop','cln','clnarc','clnaturalselection','clNBAhangtime','clNBAjam','clnbajamTE','clneonblaster','clneonrider','clnesworldchampion','clnetattack','clneverendinglegacy','clnewgroundsrumble','clnewsupermariobros','clNewSuperMarioWorld2AroundtheWorld','clnewyorkshark','clnextdoor','clnflblitz','clnfscarbonowncity','clnfsmostwanted','clnfsporcheunleashed','clnfsunderground','clnfsunderground2','clngon','clnhl2002','clnhlhitz2003','clnickelodeonsuperbrawl2','clNicktoonsFreezeFrameFrenzy','clnightclubshowdown','clnightfire','clnightshade','clnimrods','clninjabrawl','clnintendogslab','clnintendoworldcup','clnitromemustdie','clnoobminer','clnotyourpawn','clnplus','clnubbysnumberfactory','clnullkevin','clNutsandBoltsScrewingPuzzle','clnzp','clobbyonlyup','clobeythegame','clocarinaoftime','clofflineparadise','clomeganuggetclicker','clonebitadventure','clonenightasfreddy','clonepiece','clonepiecefighting','clonlyup','cloperius','cloppositeday','clopposumcountry','clorbofcreation','clordinarysonicromhack','cloregontrail','closu','clourpleguy','clovo','clovo2','clovodimensions','clovofixed','clpacman','clpacmansuperfast','clpapabakeria','clpapadonut','clpapalouienighthunt2','clpapalouiewhenburgersattack','clpapalouiewhenpizzasattack','clpapalouiewhensundaesattack','clpapapizzagood','clpapapizzagoody','clpapapizzamamamia','clpapasburgerIIIAAAAA','clpapascheeseria','clpapascupcakeria','clpapasfreezeria','clpapashotdoggeria','clpapaspancakeria','clpapaspastaria','clpapasscooperia','clpapassushiria','clpapastacomia','clpapaswingeria','clpaperio','clpaperio3d','clpaperiomania','clpapermario','clpapermariopromode','clpapermariottyd','clparappatherapper','clparappatherapperalt','clparkingfury','clparkingfury2','clparkingfury3','clparkingrush','clpartnersintime','clpeacekeeper','clpeggle','clpenaltykicks','clpenguindiner','clpenguinpass','clpepsiman','clpepsimanalt','clpereelous','clperfectdark','clperfecthotel','clpersona','clpersona2','clpersona2alt','clpersonaalt','clphasma','clpheonixjusticeforall','clpheonixrightaceattorny','clpheonixtrialsandyear','clpibbyapocalypse','clpico8','clpico8edu','clpicodriller','clpicohot','clpicolife','clpiconightpunkin','clpicosschool','clpicovsbeardx','clpikwip','clpingpongchaos','clpinkbike','clpitfall','clpitof100trials','clpixelbattlegroundsio','clpixelcombat2','clpixelquestlostidols','clpixelshooter','clpixelspeedrun','clpixelwarfare','clpizzapapa','clpizzatower','clplangman','clplantsvszombies','clplazmaburst','clplinko','clplonky','clpogo3D','clpokebattlefact','clpokeblack','clpokeblack2','clpokeblack2alt','clpokeblackalt','clpokeblazeblack2redux','clpokeblue','clpokeclassic','clpokecrown','clpokecrystalclear','clpokediamond','clpokedreamstone','clpokeeliteredux','clpokeelysiuma','clpokeelysiumb','clpokeemeraldenhanced','clpokeemeraldexceeded','clpokeemeraldhorizons','clpokeemeraldrandom','clpokefiregold','clpokeflora','clpokegaia','clpokegschronicles','clpokeheartgold','clpokelightplatinum','clpokeliquidcrysta','clpokemegamoemon','clpokemonamnesia','clpokemonclover','clpokemoncrystal','clpokemonemerald','clpokemonemeraldcrest','clpokemonemeraldimperium','clpokemonemeraldkaizo','clpokemonemeraldmini','clPokemonemeraldrouge','clpokemonemeraldseaglass','clpokemonenergizedemerald','clpokemonfirered','clpokemonfireredandleafgreenplusedition','clpokemonfireredrandomized','clpokemongold','clpokemonkaizoironfirered','clpokemonlazarus','clpokemonleafgreen','clpokemonmodernemerald','clpokemonmysterydungeon','clpokemonquetzal','clpokemonroaringred','clPokemonrocketedition','clpokemonruby','clpokemonsapphire','clpokemonshinsigma','clpokemonsilver','clpokemonsnap','clpokemonstadium','clpokemontowerdefense','clpokemonultimatefusion','clpokemonunbound','clpokemysteryexplorersofsky','clpokeodyssey','clpokepearl','clpokeperfectfirered','clpokepisces','clpokeplatinum','clpokeplatinumrandomized','clpokerechargedpink','clpokerechargedyellow','clpokerecordkeepers','clpokered','clpokerocketedition','clpokerowe','clpokeruby','clpokerunandbun','clpokescorchedsilver','clpokesoulsilver','clpokethepit','clpoketourmaline','clpokeultraviolet','clpokeunovaemerald','clpokevega','clpokevoltwhite2redux','clpokevoyager','clpokewhite','clpokewhite2','clpokewhite2alt','clpokeyellow','clpolicepursuit2','clpolishedcrystal','clpoorbunny','clpopeyepapi','clporklike','clportal','clportal2d','clportaldefendersfastbreak','clportaldefendersTD','clportalflash','clporter','clpossessquest','clpostal','clpotatomanseeksthetroof','clpou','clpraxisfighterx','clprebronzeage','clprecivilationbronzeage','clprehistoricshark','clprimary','clpullfrog','clpunchout','clpunchthedrump','clpunchthetrump','clpuppethockey','clpushyourluck','clpuyopuyofever','clpvz','clpvz2','clpvz2gardenless','clpyrotoad','clqbert','clquake2','clquake3','clquake64','clquickieworld','clqwop','clracemaster3d','clracingarena','clradicalred','clradracer','clraftwars','clraftwars2','clragdoll-io','clragdollarchers','clragdollhit','clragdollrunners','clragdollsoccer','clragollhit','clrainbowsix','clrainbowsixalt','clray1','clray2','clrayman','clraze','clraze2','clraze3','clre3','clreachthecore','clrealflightsim','clrebuild','clrebuild2','clrecoil','clredball','clredball2','clredball3','clredball4','clredball4vol2','clredball4vol3','clredhanded','clredtierunner','clredvsblue2','clredvsbluewar','clreignofcentipede','clrenegades','clresidentevil','clresidentevil2','clresizer','clresortempire','clretrobowl','clretrobowlcollege','clretrohighway','clretropingpong','clreturnman','clreturnman2','clreturntoriddleschool','clrevolutionidle','clrhythmheaven','clrhythymymheaven','clricochetkills2','clriddlemiddleschool','clriddleschool','clriddleschool2','clriddleschool3','clriddletransfer','clriddletransfer2','clridgeracer','clroadfighter','clroadoffury','clroadofthedead','clroadofthedead2','clrocketjump','clrocketknightadventures','clrocketleague','clrocketpult','clrocketsoccerderby','clrodha','clroguesoul','clroguesoul2','clrollerballer','clrollingsky','clrollyvortex','clrolypolymonster','clrooftopsnipers','clrooftopsnipers2','clroomclicker','clrotate','clrouletteknight','clrun','clrun2','clrun3','clrussiancardriver','clsandboxcity','clsandboxels','clsandsofthecoliseum','clsandtris','clsantarun','clsaszombieassault2','clsaulgoodmanrun','clscarletshift','clscarymazegame','clscrapmetal3','clscrapyarddog','clscribblenauts','clscubabear','clseamongrel','clsecretofmana','clsega2gg','clsentryfortress','clserenitrove','clservingupmadness','clsfk','clsfk2','clsfklaststand','clsfkleague','clshaggy','clshc1','clshc2','clshc3','clshift','clshift2','clshift3','clshinmegamitenseidevilsurvivor','clshortlife','clshredmill','clshrubnaut','clsideeffects','clsidepocket','clsierra7','clsilenthill','clsilenthillalt','clsilk','clsixwaystodie','clskateit','clskibidiinthebackrooms','clskibidishooter','clskong','clskyrace-3d','clsliceitall','clslideinthewoods','clslimelabratory','clslipways','clslitherio','clslope','clslope2player','clslope3','clslopeplus','clslotornot','clslowroads','clsm63redux','clsmadvance2','clsmadvance3','clsmashkarts','clsmashkartsworking','clsmashremix','clsmbc','clsmbcrossover','clsmbgameover','clsnailbob','clsnailbob2','clsnailbob3','clsnailbob4space','clsnailbob5lovestory','clsnakeis','clsnakelike','clsnipershot','clsniperv2','clsnowballio','clsnowrid','clsnowrideee','clsnowrider','clsnowridergoodygumdrops','clsnowriderrrr','clsnowroad','clsoccerbros','clsoccerrandom','clsoccerrandomgood','clsolarsandbox','clsolarsmash','clsolitaire','clsonic1contemporary','clSonic1ScoreRush','clSonic2ScoreRush','clsonic3andknuckles','clsonic3complete','clsonic3dblastdx','clsonicadvance','clsonicadvance2','clsonicadvance2sp','clsonicadvance3','clsonicandashuro','clsonicandknuckles','clsonicbattle','clsoniccd','clsonicclassiccollection','clsonicclassicheroes','clsoniccolors','clsonicdeltaorigins','clsoniceexeog','clsonicerazor','clsonicgg','clSonicHellfireSaga','clsonicjam','clsonicmegamix','clsonicr','clsonicralt','clsonicrevert','clsonicrush','clsonicrushadventure','clsonicspinball','clsonicthehedgehog','clsonicthehedgehog2','clsonicthehedgehog3','clsonny2','clsouljumper','clspacebarclicker','clspacecompany','clspaceinvaders','clspaceiskey','clspaceiskey2','clspaceiskeyxmas','clspacewarsbattleground','clspacewaves','clspeedperclick','clspeedstars','clspewer','clspiralroll','clsprunked','clsprunki','clsprunkiclicker','clsquidplayground','clstackballio','clstacktris','clstackydash','clstarfox','clstarfox64','clstarraiders','clstateio','clstation141','clstationmeltdown','clstationsaturn','clsteakandjake','clstealthassassin','clstealthmaster','clsteelempire','clsteelsurge','clstickarchersbattle','clstickfighter','clstickjetchallenge','clstickmanandguns','clstickmanclash','clstickmanduel','clstickmangtacity','clstickmanhook','clStickmanKingdomclash','clstickmankombat2d','clstickmanstealingdiamond','clstickmerge','clstickminairship','clstickminbreakingbank','clstickminescapingprison','clstickminfleecomplex','clstickrpgcomplete','clstickslasher','clstickwar','clstickwar2','clstormthehouse','clstormthehouse3','clstreetfighter2','clstreetfighter2turbo','clstreetfighteralpha3','clstreetofrage','clstreetofrage2','clstreetofrage3','clstrikeforceheroes','clstrikeforceheroes2','clstrikeforceheroes3','clstrikerdummies','clstylesavvy','clsubwaysurfersbarcelona','clsubwaysurfersbeijing','clsubwaysurfersberlin','clsubwaysurfersbuenosaires','clsubwaysurfershavana','clsubwaysurfershouston','clsubwaysurfersiceland','clsubwaysurferslondon','clsubwaysurfersmexico','clsubwaysurfersmiami','clsubwaysurfersmonaco','clsubwaysurfersneworeleans','clsubwaysurfersneworleans','clsubwaysurferssanfrancisco','clsubwaysurfersstpetersburg','clsubwaysurferswinterholiday','clsubwaysurferszurich','clsugarsugar','clsuika','clsuikapico','clsunandmoon','clsuperbomberman','clsuperbomberman2','clsuperbomberman3','clsuperbomberman4','clsuperbomberman5','clsupercarrush','clsupercastlevaniaVI','clsuperchibiknight','clsupercold','clsuperdarkdeception','clsuperdiagonalmario2','clsuperfighters','clsuperhot','clsuperhotlinemiami','clsuperhouseofdeadninjas','clsuperislandadventure','clsuperkidadventure','clsuperliquidsoccer','clsupermario','clsupermario63','clsupermario64','clsupermario64ds','clsupermarioallstars','clsupermariobros','clsupermariobros2','clsupermariobros2us','clsupermariobros3','clsupermariobros3real','clsupermariokart','clsupermarioland','clsupermarioland2','clsupermariomon','clsupermariorpg','clsupermarioworld','clsupermarioworld2','clsupermetroid','clsupermonkeyballjr','clsupernoahsark3D','clsuperoliverworld','clsuperpickleballadventure','clsuperpunchout','clsuperpuzzlefighter2turbo','clsuperpuzzlefighter2turboalt','clsuperscribblenauts','clsupersmashbros','clsupersmashflash','clsupersmashflash2','clsupersmashflash2butdifversion','clsupertiltbros','clsupitdept','clsupremeduelist','clsurvevio','clsurvivalracev2','clsushicat','clsushicat2','clsushiunroll','clswerve','clswitchblade','clswordfight','clswordplay','clswordsandsandals','clswordsandsandals2','clswordsandsouls','clsydneyshark','cltabletanks','cltabletennisworldtour','cltakeover','cltallmanrun','cltankmayhem','cltankpixel','cltanukisunset','cltapper','cltaproad','cltastyplanet','cltboilambeternal','cltecmobowl','cltelephonetrouble','cltelocation','cltempest2000','cltempleofboom','cltemplerun2','cltempoverdose','clterra','clterritorialio','clterritorywar','cltetris','cltetrisattack','cltetrisgba','cltheclassroom','cltheclassroom2','cltheclassroom3','clthedeadseat','clthedeepestsleep','cltheenchantedcave2','cltheimpossiblegame','cltheincrediblemachine','clthelaststand','clthelaststandunioncity','clthemaninthewindow','clthemepark','clthepit','clthereisnofile','clthermomorph','clthisistheonlylevel','clthisistheonlylevel2','clthisistheonlyleveltoo','clthreegoblets','clthrowapotato','clthrowapotatoagain','clthwack','cltimeshooter2','cltimeshooter3','cltimewarriors','cltinyfishing','cltmnt','cltoastarling','cltoasterball','cltombofthemass','cltommorowandyesterday','cltomodachicollection','cltonyhawkskater2','cltonyhawkskater4','cltonyhawksunderground','cltopspeedracing3d','cltosstheturtle','cltowerblocks','cltowercrash3d','cltownscraper','cltrace','cltrafficjam3d','cltrapthecat','cltriachnid','cltripleplay2000','cltriviacrack','cltrollfacequest1','cltrollfacequest10','cltrollfacequest11','cltrollfacequest12','cltrollfacequest13','cltrollfacequest2','cltrollfacequest3','cltrollfacequest4','cltrollfacequest5','cltrollfacequest6','cltrollfacequest7','cltrollfacequest8','cltrollfacequest9','cltrucksim','cltubejumpers','cltunnelrush','cltunnelrushbetter','clturbostars','clturokdinosaurhunter','cltwinshot','cltwistedmetal','cltwistedmetal2','cltwoball3d','clucds','clufoswampoddysey','clultimateassassian2','clultimateassassian3','clUltimatecardrivingsimulator','clultimatemortalkombat','clultimatemortalkombat3','clultrakill','cluncannycatgolf','clunderneath','clundertaler','clundertaleyellow','clunfairmario','clunfairmarioworkquestionmark','clunfairundyne','clunicyclehero','cluno','cluntime','clupgradecomplete','clupgradecomplete2','clupslash','clUZG','clvampiresurvivors','clvanguard','clvaportrails','clvex','clvex2','clvex3','clvex3xmas','clvex4','clvex5','clvex6','clvex7','clvex8','clvexchallenges','clvexx3m','clvexx3m2','clvillager','clvincentmansionofthedead','clvisitor','clvolleyrandom','clvollyballchallenge','clvvvvvv','clwaluigitacostand','clwarfare1944','clwarioland4','clwariowarediy','clwariowareinc','clwartheknight','clwaterpoolio','clwavedash','clwaverace64','clwaverun','clwebecomewhatwebehold','clwebfishing','clweltling','clwermhole','clwhackthetheif','clwhackyourboss','clwhackyourcomputer','clwheelybike','clwheely','clwheely2','clwheely3','clwheely4','clwheely5','clwheely6','clwheely7','clwheely8','clwindowsdoors','clwinterfalling','clwipeout2097','clwipeout2097alt','clwitchcrafttd','clwolfenstein','clwolfenstein3d','clwoodworm','clwordle','clworldcup98','clworldshardestgame','clworldshardestgame2','clworldshardestgame3','clworldshardestgame4','clwrassling','clwrestlebros','clXevious','clyanderesimulator','clyarsrevenge','clyellow','clYoshisStrangeQuest','clyouarelucky','clyouvs100skibidi','clyumenikki','clzelda2thelegendoflink','clzeldaminishcap','clzenword','clzombieexploder','clzombieroad','clzombierush','clzombiesatemyneighboors','clzombopaclypse2','clzombotron','clzombotron2','clzombotronreboot','clzrist','clzuma','clzumashooter','Eaglercraft-Alpha-1.2.6-Offline','Eaglercraft-Beta-1.3-Offline','Eaglercraft-Indev-Offline','eaglercraft.1.5.2','EaglercraftL_1.9_v0_7_0_Offline_Signed','EaglercraftX 1.8.8(u29)','EaglercraftZ_1.11.2','marbleracer','mariobuilder64','Minceraft-I-NotMine_V6','mortalkombat4','polytrackbutnotflagged','rocketknight2','sandstone','snowbros','superdromebugs','vvvvvv','wilywars'];
+
+function displayName(f){return f.replace(/^cl/i,'').trim()||f;}
+function initials(n){const w=n.replace(/[^a-zA-Z0-9\s]/g,' ').trim().split(/\s+/);return(w.length>=2?(w[0][0]+(w[1][0]||'')):n.substring(0,2)).toUpperCase();}
+
+function getStaticImg(file){
+  const key=displayName(file).toLowerCase().replace(/[^a-z0-9]/g,'');
+  if(IMGS[key]) return IMGS[key];
+  let best=null,bestLen=0;
+  for(const k of Object.keys(IMGS)){
+    if(key.startsWith(k)&&k.length>bestLen){best=IMGS[k];bestLen=k.length;}
+    if(k.startsWith(key)&&key.length>=5&&key.length>bestLen){best=IMGS[k];bestLen=key.length;}
+  }
+  return best;
+}
+
+function getBestImg(file){
+  // Saved screenshot takes priority
+  const snap = getSnap(file);
+  if(snap) return {url:snap, isSnap:true};
+  const staticUrl = getStaticImg(file);
+  if(staticUrl) return {url:staticUrl, isSnap:false};
+  return null;
+}
+
+const games=[...new Map(RAW.map(f=>[f.toLowerCase(),f])).values()]
+  .sort((a,b)=>displayName(a).localeCompare(displayName(b),undefined,{sensitivity:'base'}));
+
+const grid=document.getElementById('grid');
+const emptyEl=document.getElementById('empty');
+const searchInput=document.getElementById('search');
+
+function makeCard(file){
+  const name=displayName(file);
+  const card=document.createElement('div');
+  card.className='card';
+  card.dataset.file=file;
+
+  const thumb=document.createElement('div');
+  thumb.className='card-thumb';
+
+  const ini=document.createElement('span');
+  ini.className='ini';
+  ini.textContent=initials(name);
+
+  const imgData=getBestImg(file);
+  if(imgData){
+    const img=document.createElement('img');
+    img.loading='lazy';
+    img.decoding='async';
+    img.src=imgData.url;
+    img.alt=name;
+    img.onload=()=>img.classList.add('loaded');
+    img.onerror=()=>img.remove();
+    thumb.appendChild(img);
+  }
+  thumb.appendChild(ini);
+
+  // snap badge
+  const badge=document.createElement('div');
+  badge.className='snap-badge ' + (getSnap(file)?'has-snap':'no-snap');
+  badge.textContent=getSnap(file)?'📸 captured':'📸 play to capture';
+  card.appendChild(thumb);
+
+  const label=document.createElement('div');
+  label.className='card-label';
+  label.textContent=name;
+
+  card.appendChild(badge);
+  card.appendChild(label);
+  card.onclick=()=>launchGame(file);
+  return card;
+}
+
+function render(list){
+  grid.innerHTML='';
+  emptyEl.style.display=list.length?'none':'block';
+  if(!list.length)return;
+  let i=0;
+  function chunk(){
+    const end=Math.min(i+60,list.length);
+    const frag=document.createDocumentFragment();
+    for(;i<end;i++)frag.appendChild(makeCard(list[i]));
+    grid.appendChild(frag);
+    if(i<list.length)requestAnimationFrame(chunk);
+  }
+  chunk();
+}
+
+render(games);
+
+let t;
+searchInput.addEventListener('input',()=>{
+  clearTimeout(t);
+  t=setTimeout(()=>{
+    const q=searchInput.value.trim().toLowerCase();
+    render(q?games.filter(f=>displayName(f).toLowerCase().includes(q)):games);
+  },150);
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='/'&&document.activeElement!==searchInput){e.preventDefault();searchInput.focus();}
+  if(e.key==='Escape')searchInput.blur();
+});
+</script>
+</body>
+</html>
